@@ -20,8 +20,8 @@
 - **🖐️ Doğrudan Precision Touchpad (`0x000D:0x0005`) Ham HID Okuyucu:**
   - Touchpad'e **basmaya/tıklamaya gerek kalmadan (Sıfır Baskı)** 1 veya 2 parmağınızı yüzeyde hafifçe kaydırarak fosforlu çizim yapabilirsiniz.
   - **Delta-Centroid (Ortak Merkez) Motoru:** Yüzeye 2 parmak koyduğunuzda iki parmak arasına düz çizgi çekmez; parmak sayısı değişimlerini (`0 -> 1 -> 2 -> 1`) otomatik sönümler ve ortak ağırlık merkezini takip eder.
-- **📐 Dinamik Auto-Fit Neon Tuval:**
-  - Parmağınızı touchpad'in neresine koyarsanız koyun çizim merkezden başlar ve `C` gibi yukarı kavisli harfleri çizerken tuval sınırlarına çarpıp düzleşmez; kamera çiziminizi gerçek zamanlı ortalar.
+- **📐 Dinamik Otomatik Sığdırma (Auto-Fit) Tuvali:**
+  - Parmağınızı touchpad'in neresine koyarsanız koyun çizim merkezden başlar ve `C` gibi yukarı kavisli harfleri çizerken tuval sınırlarına çarpıp düzleşmez; çiziminiz gerçek zamanlı olarak tuval alanına ortalanır ve ölçeklenir.
 - **🧠 Hibrit Tanıma Motoru (`Geometrik Sınıflandırıcı` + `$1 Unistroke`) & Canlı Kalibrasyon (`[🎯 Harf Öğret]`):**
   - El yazısı farklarına dayanıklı geometrik topoloji analizi ile oran koruyucu (`Uniform Scaling`) `$1 Unistroke` şablon eşleştiricisini birleştirir.
   - HUD üzerindeki **`[🎯 Harf Öğret (T)]`** butonuyla kendi el alışkanlığınızı doğrudan `config.json` içine kaydedebilirsiniz.
@@ -122,8 +122,8 @@ cargo build --release
 | Katman | Teknoloji / API | Görev |
 | :--- | :--- | :--- |
 | **Donanım HID Katmanı** | `RegisterRawInputDevices` (`0x000D:0x0005`) + `hid.dll` (`HidP_GetValueCaps`, `HidP_GetUsages`, `HidP_GetUsageValue`) | Touchpad yüzeyindeki 5 parmağa kadar `Tip Switch` ve `X/Y` koordinatlarını çalışma zamanında otomatik keşfeder ve okur. |
-| **İzolasyon Kalkanı** | `SetWindowsHookExW(WH_MOUSE_LL)` | 2-parmak çift tık yedek algılamasını yapar ve HUD açıkken arka plan kaydırmalarını (`WM_MOUSEWHEEL`) bloke eder. |
-| **Hareket & Kamera Motoru** | `Delta-Centroid` + `Auto-Fit Viewport` | Parmak değişim sıçramalarını filtreler ve çizimi tuval sınırlarına çarptırmadan merkeze izdüşürür. |
+| **Giriş İzolasyon Katmanı** | `SetWindowsHookExW(WH_MOUSE_LL)` | 2-parmak çift tık yedek algılamasını yapar ve HUD açıkken arka plan kaydırmalarını (`WM_MOUSEWHEEL`) bloke eder. |
+| **Hareket & Ölçekleme Katmanı** | `Delta-Centroid` + `Auto-Fit İzdüşüm` | Parmak değişim sıçramalarını filtreler ve çizimi tuval sınırlarına çarptırmadan merkeze ölçekler. |
 | **Tanıma Motoru** | `compute_geometric_scores` + `$1 Unistroke` (`64-point Uniform Resample`) | Hem topolojik geometri kuralları hem de açısal şablon benzerliğiyle `%` eşleşme skoru üretir. |
 | **Arayüz & Sistem Tepsisi** | Win32 GDI Double-Buffered `BitBlt` + `Shell_NotifyIconW` | Titremesiz (flicker-free) fosforlu çizim tuvali ve sağ alt sistem tepsisi menüsü sunar. |
 

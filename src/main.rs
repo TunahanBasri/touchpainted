@@ -1672,7 +1672,7 @@ unsafe extern "system" fn hud_wnd_proc(hwnd: HWND, msg: UINT, wparam: WPARAM, lp
                         DeleteObject(core_pen);
                     }
 
-                    // Canlı Lazer Ucu Noktası
+                    // Çizim Ucu İmleç Noktası
                     if let Some(&last_pt) = canvas_pts.last() {
                         let dot_brush = CreateSolidBrush(rgb(120, 255, 220));
                         let dot_pen2 = CreatePen(PS_SOLID, 1, rgb(255, 255, 255));
@@ -2090,7 +2090,7 @@ unsafe extern "system" fn hud_wnd_proc(hwnd: HWND, msg: UINT, wparam: WPARAM, lp
 }
 
 // ============================================================================
-// 6. GLOBAL LOW-LEVEL MOUSE SHIELD & FALLBACK (WH_MOUSE_LL)
+// 6. GLOBAL LOW-LEVEL MOUSE ISOLATION & FALLBACK (WH_MOUSE_LL)
 // ============================================================================
 static mut MOUSE_HOOK: HANDLE = null_mut();
 static mut LAST_RBUTTON_TAP: Option<Instant> = None;
