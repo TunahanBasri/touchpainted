@@ -6,6 +6,10 @@
 
 **touchpa(inte)d** (`touchpainted`), dizüstü bilgisayarınızın **Windows Precision Touchpad** yüzeyinde **1 veya 2 parmağınızla sıfır baskıyla** harf çizerek (`C`, `V`, `M`, `S`, `W` veya kendi öğrettiğiniz özel şekiller) uygulamaları, klasörleri ve web bağlantılarını anında başlatmanızı sağlayan, **sıfır harici bağımlılıklı (Zero-Dependency)** ultra hafif yerel bir Windows başlatıcısıdır.
 
+<p align="center">
+  <img src="assets/demo.gif" alt="touchpa(inte)d 2-parmak çift dokunuş ve sıfır baskıyla C çizimi" width="780"/>
+</p>
+
 ---
 
 ## ✨ Öne Çıkan Özellikler
