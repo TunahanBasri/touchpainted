@@ -1,0 +1,19 @@
+[package]
+name = "touchpainted"
+version = "1.0.0"
+edition = "2024"
+description = "Zero-dependency gesture launcher for precision touchpads"
+license = "MIT"
+
+[[bin]]
+name = "touchpainted"
+path = "src/main.rs"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[dependencies]

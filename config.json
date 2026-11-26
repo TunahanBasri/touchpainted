@@ -1,0 +1,40 @@
+{
+  "idle_timeout_ms": 4000,
+  "gestures": [
+    {
+      "letter": "C",
+      "name": "Hesap Makinesi",
+      "app": "calc.exe",
+      "param": "",
+      "custom_points": []
+    },
+    {
+      "letter": "V",
+      "name": "Dosya Gezgini",
+      "app": "explorer.exe",
+      "param": "",
+      "custom_points": []
+    },
+    {
+      "letter": "M",
+      "name": "Çizim Tuvali",
+      "app": "mspaint.exe",
+      "param": "",
+      "custom_points": []
+    },
+    {
+      "letter": "S",
+      "name": "Ayarlar",
+      "app": "ms-settings:",
+      "param": "",
+      "custom_points": []
+    },
+    {
+      "letter": "W",
+      "name": "Not Defteri",
+      "app": "notepad.exe",
+      "param": "",
+      "custom_points": []
+    }
+  ]
+}

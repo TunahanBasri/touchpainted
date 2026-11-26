@@ -1,0 +1,14 @@
+# Rust build artifacts
+/target/
+**/*.rs.bk
+*.pdb
+
+# Runtime logs
+touchpad_log.txt
+*.log
+
+# Editor & OS files
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
