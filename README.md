@@ -125,6 +125,10 @@ cargo build --release
 
 ---
 
-## 📄 Lisans
+## 📄 Lisans (Ticari Kullanıma Kapalı)
 
-Bu proje [MIT Lisansı](LICENSE) ile lisanslanmıştır.
+Telif Hakkı © 2026 **TunahanBasri**. Tüm ticari hakları saklıdır.
+
+Bu proje **[Ticari Olmayan Kişisel Kullanım Lisansı](LICENSE)** kapsamındadır:
+- ✅ **Kişisel Kullanım Serbest:** Bireysel ve eğitim amaçlı ücretsiz kullanabilir, inceleyebilir ve kendi bilgisayarınız için derleyebilirsiniz.
+- ❌ **Ticari Kullanım ve Satış Yasak:** Yazılımın, kaynak kodunun veya türevlerinin **satılması, ücretli dağıtılması veya ticari ürünlerde kullanılması** kesinlikle yasaktır.

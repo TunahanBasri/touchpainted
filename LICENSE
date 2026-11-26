@@ -1,21 +1,62 @@
-MIT License
+TOUCHPAINTED — NON-COMMERCIAL PERSONAL USE LICENSE
+(TİCARİ OLMAYAN KİŞİSEL KULLANIM LİSANSI)
 
-Copyright (c) 2026 TunahanBasri
+Copyright (c) 2026 TunahanBasri. All Rights Reserved.
+Telif Hakkı (c) 2026 TunahanBasri. Tüm Ticari Hakları Saklıdır.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+========================================================================
+TÜRKÇE LİSANS KOŞULLARI
+========================================================================
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+1. İZİN VERİLEN KULLANIM (YALNIZCA KİŞİSEL VE EĞİTİM AMAÇLI):
+   Bu yazılımın ve kaynak kodlarının ("Yazılım") yalnızca bireysel, kişisel,
+   eğitim ve akademik araştırma amaçlarıyla ücretsiz olarak kullanılmasına,
+   incelenmesine ve kişisel kullanım için derlenmesine izin verilmektedir.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+2. TİCARİ KULLANIM VE SATIŞ YASAĞI (KESİN KISITLAMA):
+   Telif hakkı sahibinin (TunahanBasri) önceden yazılı izni olmaksızın:
+   a) Yazılımın kendisinin, kaynak kodlarının, derlenmiş çalıştırılabilir
+      (.exe) dosyalarının veya değiştirilmiş türevlerinin satılması,
+      kiralanması, alt lisanslanması veya herhangi bir ücret karşılığında
+      dağıtılması KESİNLİKLE YASAKTIR.
+   b) Yazılımın veya içindeki algoritmaların ücretli/reklam gelirli bir
+      ürüne, ticari yazılıma, donanım paketine veya ticari hizmete dahil
+      edilmesi KESİNLİKLE YASAKTIR.
+   c) Doğrudan veya dolaylı ticari kazanç amacıyla kullanılması YASAKTIR.
+
+3. ATIF VE TELİF BİLDİRİMİ:
+   Kişisel amaçlı kopyalarda bu telif hakkı ve lisans metni aynen
+   korunmalıdır.
+
+4. GARANTİ REDDİ:
+   YAZILIM "OLDUĞU GİBİ" SUNULMAKTADIR. TELİF HAKKI SAHİBİ, YAZILIMIN
+   KULLANIMINDAN DOĞABİLECEK HİÇBİR DOĞRUDAN VEYA DOLAYLI ZARARDAN SORUMLU
+   TUTULAMAZ.
+
+========================================================================
+ENGLISH LICENSE TERMS
+========================================================================
+
+1. PERMITTED USE (PERSONAL & NON-COMMERCIAL ONLY):
+   Permission is granted, free of charge, to any individual to use, inspect,
+   and compile this software and its source code (the "Software") strictly
+   for personal, individual, educational, and non-commercial purposes.
+
+2. COMMERCIAL USE & SALE PROHIBITION:
+   Without prior written permission from the copyright holder (TunahanBasri),
+   you may NOT:
+   a) Sell, rent, lease, sublicense, monetize, or distribute for a fee the
+      Software, its source code, compiled binaries, or any derivative works.
+   b) Bundle, embed, or integrate any part of the Software into any
+      commercial product, paid or ad-supported application, hardware driver
+      bundle, or commercial service.
+   c) Use the Software in any commercial business operation.
+
+3. ATTRIBUTION:
+   The above copyright notice and this license notice must be retained in
+   all copies used under this license.
+
+4. DISCLAIMER OF WARRANTY:
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+   OR IMPLIED. IN NO EVENT SHALL THE AUTHOR OR COPYRIGHT HOLDER BE LIABLE
+   FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY ARISING FROM THE SOFTWARE.

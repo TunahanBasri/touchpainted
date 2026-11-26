@@ -3,7 +3,8 @@ name = "touchpainted"
 version = "1.0.0"
 edition = "2024"
 description = "Zero-dependency gesture launcher for precision touchpads"
-license = "MIT"
+license-file = "LICENSE"
+publish = false
 
 [[bin]]
 name = "touchpainted"
