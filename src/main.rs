@@ -55,6 +55,7 @@ const WM_PAINT: UINT = 0x000F;
 const WM_CLOSE: UINT = 0x0010;
 const WM_INPUT: UINT = 0x00FF;
 const WM_KEYDOWN: UINT = 0x0100;
+const WM_SYSKEYDOWN: UINT = 0x0104;
 const WM_COMMAND: UINT = 0x0111;
 const WM_TIMER: UINT = 0x0113;
 const WM_MOUSEMOVE: UINT = 0x0200;
@@ -88,7 +89,15 @@ const DT_VCENTER: UINT = 0x00000004;
 const DT_SINGLELINE: UINT = 0x00000020;
 const PS_SOLID: i32 = 0;
 
+const MOD_ALT: UINT = 0x0001;
 const MOD_CONTROL: UINT = 0x0002;
+const MOD_SHIFT: UINT = 0x0004;
+const MOD_NOREPEAT: UINT = 0x4000;
+const VK_TAB: UINT = 0x09;
+const VK_RETURN: UINT = 0x0D;
+const VK_SHIFT: i32 = 0x10;
+const VK_CONTROL: i32 = 0x11;
+const VK_MENU: i32 = 0x12;
 const VK_SPACE: UINT = 0x20;
 const VK_ESCAPE: UINT = 0x1B;
 const VK_T: UINT = 0x54;
@@ -944,7 +953,53 @@ pub fn compute_geometric_scores(pts: &[(f32, f32)]) -> Vec<(char, f32)> {
 }
 
 // --- config.json Okuyucu & Yazıcı ---
-pub fn load_config(path: &str) -> (u128, Vec<GestureRule>) {
+pub struct AppConfig {
+    pub idle_timeout_ms: u128,
+    pub hotkey_enabled: bool,
+    pub hotkey_mods: u32,
+    pub hotkey_vk: u32,
+    pub rules: Vec<GestureRule>,
+}
+
+pub fn vk_name(vk: u32) -> String {
+    match vk {
+        0x20 => "Space".to_string(),
+        0x09 => "Tab".to_string(),
+        0x0D => "Enter".to_string(),
+        0x08 => "Backspace".to_string(),
+        0x2D => "Insert".to_string(),
+        0x2E => "Delete".to_string(),
+        0x24 => "Home".to_string(),
+        0x23 => "End".to_string(),
+        0x21 => "PgUp".to_string(),
+        0x22 => "PgDn".to_string(),
+        0x25 => "Left".to_string(),
+        0x26 => "Up".to_string(),
+        0x27 => "Right".to_string(),
+        0x28 => "Down".to_string(),
+        0xC0 => "`".to_string(),
+        0x30..=0x39 | 0x41..=0x5A => format!("{}", (vk as u8) as char),
+        0x70..=0x7B => format!("F{}", vk - 0x70 + 1),
+        _ => format!("0x{:02X}", vk),
+    }
+}
+
+pub fn format_hotkey(mods: u32, vk: u32) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    if mods & MOD_CONTROL != 0 {
+        parts.push("Ctrl".to_string());
+    }
+    if mods & MOD_ALT != 0 {
+        parts.push("Alt".to_string());
+    }
+    if mods & MOD_SHIFT != 0 {
+        parts.push("Shift".to_string());
+    }
+    parts.push(vk_name(vk));
+    parts.join(" + ")
+}
+
+pub fn load_config(path: &str) -> AppConfig {
     let default_rules = vec![
         GestureRule {
             letter: 'C',
@@ -985,10 +1040,21 @@ pub fn load_config(path: &str) -> (u128, Vec<GestureRule>) {
 
     let content = match fs::read_to_string(path) {
         Ok(c) => c,
-        Err(_) => return (4000, default_rules),
+        Err(_) => {
+            return AppConfig {
+                idle_timeout_ms: 4000,
+                hotkey_enabled: true,
+                hotkey_mods: MOD_CONTROL,
+                hotkey_vk: VK_SPACE,
+                rules: default_rules,
+            };
+        }
     };
 
     let timeout_ms = extract_json_u128(&content, "idle_timeout_ms").unwrap_or(4000);
+    let hotkey_enabled = extract_json_bool(&content, "hotkey_enabled").unwrap_or(true);
+    let hotkey_mods = extract_json_u128(&content, "hotkey_mods").unwrap_or(MOD_CONTROL as u128) as u32;
+    let hotkey_vk = extract_json_u128(&content, "hotkey_vk").unwrap_or(VK_SPACE as u128) as u32;
 
     let mut rules = Vec::new();
     for block in content.split('{').skip(2) {
@@ -1012,7 +1078,28 @@ pub fn load_config(path: &str) -> (u128, Vec<GestureRule>) {
         }
     }
 
-    (timeout_ms, if rules.is_empty() { default_rules } else { rules })
+    AppConfig {
+        idle_timeout_ms: timeout_ms,
+        hotkey_enabled,
+        hotkey_mods,
+        hotkey_vk,
+        rules: if rules.is_empty() { default_rules } else { rules },
+    }
+}
+
+fn extract_json_bool(src: &str, key: &str) -> Option<bool> {
+    let pat = format!("\"{}\"", key);
+    let idx = src.find(&pat)?;
+    let rest = &src[idx + pat.len()..];
+    let colon = rest.find(':')?;
+    let trimmed = rest[colon + 1..].trim_start();
+    if trimmed.starts_with("true") {
+        Some(true)
+    } else if trimmed.starts_with("false") {
+        Some(false)
+    } else {
+        None
+    }
 }
 
 fn extract_json_u128(src: &str, key: &str) -> Option<u128> {
@@ -1060,8 +1147,18 @@ fn extract_json_points(src: &str, key: &str) -> Vec<(f32, f32)> {
     pts
 }
 
-pub fn save_rules_to_config(path: &str, idle_timeout_ms: u128, rules: &[GestureRule]) {
-    let mut out = format!("{{\n  \"idle_timeout_ms\": {},\n  \"gestures\": [\n", idle_timeout_ms);
+pub fn save_rules_to_config(
+    path: &str,
+    idle_timeout_ms: u128,
+    hotkey_enabled: bool,
+    hotkey_mods: u32,
+    hotkey_vk: u32,
+    rules: &[GestureRule],
+) {
+    let mut out = format!(
+        "{{\n  \"idle_timeout_ms\": {},\n  \"hotkey_enabled\": {},\n  \"hotkey_mods\": {},\n  \"hotkey_vk\": {},\n  \"gestures\": [\n",
+        idle_timeout_ms, hotkey_enabled, hotkey_mods, hotkey_vk
+    );
     for (i, r) in rules.iter().enumerate() {
         out.push_str("    {\n");
         out.push_str(&format!("      \"letter\": \"{}\",\n", r.letter));
@@ -1158,6 +1255,11 @@ pub struct AppState {
     pub last_mouse_pt: Option<POINT>,
 
     // Arayüz & Kurallar
+    pub hotkey_enabled: bool,
+    pub hotkey_mods: u32,
+    pub hotkey_vk: u32,
+    pub is_settings_mode: bool,
+    pub is_capturing_hotkey: bool,
     pub status_text: String,
     pub rules: Vec<GestureRule>,
     pub builtins: Vec<BuiltinTemplate>,
@@ -1167,9 +1269,16 @@ static mut GLOBAL_APP: Option<AppState> = None;
 
 impl AppState {
     pub fn new(pos_x: i32, pos_y: i32, win_w: i32, win_h: i32) -> Self {
-        let (idle_timeout_ms, rules) = load_config("config.json");
+        let cfg = load_config("config.json");
         if !std::path::Path::new("config.json").exists() {
-            save_rules_to_config("config.json", idle_timeout_ms, &rules);
+            save_rules_to_config(
+                "config.json",
+                cfg.idle_timeout_ms,
+                cfg.hotkey_enabled,
+                cfg.hotkey_mods,
+                cfg.hotkey_vk,
+                &cfg.rules,
+            );
         }
         let builtins = build_builtin_templates();
 
@@ -1185,7 +1294,7 @@ impl AppState {
             win_w,
             win_h,
             saved_cursor_pos: POINT::default(),
-            idle_timeout_ms,
+            idle_timeout_ms: cfg.idle_timeout_ms,
             last_activity_time: Instant::now(),
             virtual_points: Vec::with_capacity(512),
             prev_contact_count: 0,
@@ -1201,8 +1310,13 @@ impl AppState {
             last_close_time: None,
             mouse_left_down: false,
             last_mouse_pt: None,
+            hotkey_enabled: cfg.hotkey_enabled,
+            hotkey_mods: cfg.hotkey_mods,
+            hotkey_vk: cfg.hotkey_vk,
+            is_settings_mode: false,
+            is_capturing_hotkey: false,
             status_text: "✨ Touchpad'de 1 veya 2 parmağınızı kaydırarak harf çizin...".to_string(),
-            rules,
+            rules: cfg.rules,
             builtins,
         }
     }
@@ -1256,6 +1370,8 @@ impl AppState {
 
         self.is_hud_visible = false;
         self.is_teaching_mode = false;
+        self.is_settings_mode = false;
+        self.is_capturing_hotkey = false;
         self.virtual_points.clear();
         self.prev_contact_count = 0;
         self.last_centroid = None;
@@ -1275,7 +1391,170 @@ impl AppState {
         }
     }
 
+    pub fn persist_config(&self) {
+        save_rules_to_config(
+            "config.json",
+            self.idle_timeout_ms,
+            self.hotkey_enabled,
+            self.hotkey_mods,
+            self.hotkey_vk,
+            &self.rules,
+        );
+    }
+
+    pub fn apply_global_hotkey(&self) -> bool {
+        if self.hud_hwnd.is_null() {
+            return false;
+        }
+        unsafe {
+            UnregisterHotKey(self.hud_hwnd, 1);
+            if self.hotkey_enabled {
+                RegisterHotKey(
+                    self.hud_hwnd,
+                    1,
+                    self.hotkey_mods | MOD_NOREPEAT,
+                    self.hotkey_vk,
+                ) != 0
+            } else {
+                true
+            }
+        }
+    }
+
+    pub fn toggle_settings_mode(&mut self) {
+        self.is_settings_mode = !self.is_settings_mode;
+        self.is_capturing_hotkey = false;
+        self.virtual_points.clear();
+        self.prev_contact_count = 0;
+        self.active_finger_count = 0;
+        self.last_centroid = None;
+        self.last_activity_time = Instant::now();
+
+        if self.is_settings_mode {
+            if self.is_teaching_mode {
+                self.is_teaching_mode = false;
+                self.teaching_entered_at = None;
+                if self.is_hud_visible {
+                    unsafe {
+                        RegisterHotKey(self.hud_hwnd, 3, 0, VK_T);
+                    }
+                }
+            }
+            self.status_text = "⚙️ Ayarlar: Açma kısayolunu açıp kapatabilir veya değiştirebilirsiniz.".to_string();
+        } else {
+            if self.is_hud_visible {
+                unsafe {
+                    RegisterHotKey(self.hud_hwnd, 2, 0, VK_ESCAPE);
+                    RegisterHotKey(self.hud_hwnd, 3, 0, VK_T);
+                }
+            }
+            self.status_text = "✍️ Touchpad'de 1 veya 2 parmakla 'C', 'V', 'M' çizin...".to_string();
+        }
+        unsafe {
+            InvalidateRect(self.hud_hwnd, null(), 0);
+        }
+    }
+
+    pub fn toggle_hotkey_enabled(&mut self) {
+        self.is_capturing_hotkey = false;
+        self.hotkey_enabled = !self.hotkey_enabled;
+        let ok = self.apply_global_hotkey();
+        if !ok && self.hotkey_enabled {
+            self.hotkey_enabled = false;
+            self.status_text = format!(
+                "⚠️ '{}' başka bir uygulama tarafından kullanılıyor!",
+                format_hotkey(self.hotkey_mods, self.hotkey_vk)
+            );
+        } else {
+            self.persist_config();
+            self.status_text = if self.hotkey_enabled {
+                format!(
+                    "✅ Açma kısayolu aktif: {}",
+                    format_hotkey(self.hotkey_mods, self.hotkey_vk)
+                )
+            } else {
+                "🔕 Klavye ile açma kısayolu kapatıldı (Sadece 2 parmak çift dokunuş).".to_string()
+            };
+        }
+        self.last_activity_time = Instant::now();
+        unsafe {
+            InvalidateRect(self.hud_hwnd, null(), 0);
+        }
+    }
+
+    pub fn start_hotkey_capture(&mut self) {
+        self.is_capturing_hotkey = true;
+        self.last_activity_time = Instant::now();
+        unsafe {
+            UnregisterHotKey(self.hud_hwnd, 2);
+            UnregisterHotKey(self.hud_hwnd, 3);
+            SetForegroundWindow(self.hud_hwnd);
+        }
+        self.status_text = "⌨️ Yeni kısayol tuşlarına basın (Örn: Ctrl+Shift+A, F9) • İptal: ESC".to_string();
+        unsafe {
+            InvalidateRect(self.hud_hwnd, null(), 0);
+        }
+    }
+
+    pub fn cancel_hotkey_capture(&mut self) {
+        self.is_capturing_hotkey = false;
+        self.last_activity_time = Instant::now();
+        if self.is_hud_visible {
+            unsafe {
+                RegisterHotKey(self.hud_hwnd, 2, 0, VK_ESCAPE);
+                RegisterHotKey(self.hud_hwnd, 3, 0, VK_T);
+            }
+        }
+        self.status_text = "⚙️ Kısayol değiştirme iptal edildi.".to_string();
+        unsafe {
+            InvalidateRect(self.hud_hwnd, null(), 0);
+        }
+    }
+
+    pub fn finish_hotkey_capture(&mut self, new_mods: u32, new_vk: u32) {
+        self.is_capturing_hotkey = false;
+        self.last_activity_time = Instant::now();
+        if self.is_hud_visible {
+            unsafe {
+                RegisterHotKey(self.hud_hwnd, 2, 0, VK_ESCAPE);
+                RegisterHotKey(self.hud_hwnd, 3, 0, VK_T);
+            }
+        }
+        let old_enabled = self.hotkey_enabled;
+        let old_mods = self.hotkey_mods;
+        let old_vk = self.hotkey_vk;
+
+        self.hotkey_enabled = true;
+        self.hotkey_mods = new_mods;
+        self.hotkey_vk = new_vk;
+        if self.apply_global_hotkey() {
+            self.persist_config();
+            self.status_text = format!(
+                "✅ Yeni açma kısayolu kaydedildi: {}",
+                format_hotkey(new_mods, new_vk)
+            );
+        } else {
+            self.hotkey_enabled = old_enabled;
+            self.hotkey_mods = old_mods;
+            self.hotkey_vk = old_vk;
+            let _ = self.apply_global_hotkey();
+            self.status_text = format!(
+                "⚠️ '{}' başka bir uygulama tarafından kullanılıyor!",
+                format_hotkey(new_mods, new_vk)
+            );
+        }
+        unsafe {
+            InvalidateRect(self.hud_hwnd, null(), 0);
+        }
+    }
+
+    pub fn reset_hotkey_default(&mut self) {
+        self.finish_hotkey_capture(MOD_CONTROL, VK_SPACE);
+    }
+
     pub fn toggle_teaching_mode(&mut self) {
+        self.is_settings_mode = false;
+        self.is_capturing_hotkey = false;
         self.is_teaching_mode = !self.is_teaching_mode;
         self.virtual_points.clear();
         self.prev_contact_count = 0;
@@ -1337,6 +1616,10 @@ impl AppState {
         let now = Instant::now();
         self.last_ptp_packet_time = Some(now);
         self.active_finger_count = contacts.len();
+
+        if self.is_settings_mode {
+            return;
+        }
 
         if !self.is_hud_visible {
             if self.is_paused {
@@ -1545,7 +1828,7 @@ impl AppState {
                     custom_points: norm_candidate,
                 });
             }
-            save_rules_to_config("config.json", self.idle_timeout_ms, &self.rules);
+            self.persist_config();
             log_line(&format!(
                 "✅ [KALİBRASYON KAYDEDİLDİ] '{}' harfi config.json'a yazıldı!",
                 target_ch
@@ -1713,20 +1996,32 @@ unsafe extern "system" fn hud_wnd_proc(hwnd: HWND, msg: UINT, wparam: WPARAM, lp
                 DeleteObject(canvas_brush);
                 DeleteObject(canvas_pen);
 
-                // Tuval Nokta Izgarası
-                let dot_pen = CreatePen(PS_SOLID, 1, rgb(28, 34, 46));
-                let old_p = SelectObject(mem_dc, dot_pen);
-                for x in (50..w - 50).step_by(40) {
-                    for y in (95..h - 75).step_by(40) {
-                        MoveToEx(mem_dc, x, y, null_mut());
-                        LineTo(mem_dc, x + 2, y + 2);
-                    }
-                }
-                SelectObject(mem_dc, old_p);
-                DeleteObject(dot_pen);
-
                 if let Some(ref app) = GLOBAL_APP {
-                    // 3. [🎯 Harf Öğret (T)] Butonu
+                    if app.is_settings_mode {
+                        let card_brush = CreateSolidBrush(rgb(17, 21, 30));
+                        let card_pen = CreatePen(PS_SOLID, 1, rgb(48, 60, 84));
+                        let old_b = SelectObject(mem_dc, card_brush);
+                        let old_p = SelectObject(mem_dc, card_pen);
+                        RoundRect(mem_dc, 20, 68, w - 20, h - 55, 16, 16);
+                        SelectObject(mem_dc, old_b);
+                        SelectObject(mem_dc, old_p);
+                        DeleteObject(card_brush);
+                        DeleteObject(card_pen);
+                    } else {
+                        // Tuval Nokta Izgarası
+                        let dot_pen = CreatePen(PS_SOLID, 1, rgb(28, 34, 46));
+                        let old_p = SelectObject(mem_dc, dot_pen);
+                        for x in (50..w - 50).step_by(40) {
+                            for y in (95..h - 75).step_by(40) {
+                                MoveToEx(mem_dc, x, y, null_mut());
+                                LineTo(mem_dc, x + 2, y + 2);
+                            }
+                        }
+                        SelectObject(mem_dc, old_p);
+                        DeleteObject(dot_pen);
+                    }
+
+                    // 3. [🎯 Harf Öğret (T)] ve [⚙] Butonları
                     let teach_bg = if app.is_teaching_mode {
                         CreateSolidBrush(rgb(180, 120, 20))
                     } else {
@@ -1735,14 +2030,90 @@ unsafe extern "system" fn hud_wnd_proc(hwnd: HWND, msg: UINT, wparam: WPARAM, lp
                     let teach_pen = CreatePen(PS_SOLID, 1, rgb(70, 90, 120));
                     let old_b = SelectObject(mem_dc, teach_bg);
                     let old_p = SelectObject(mem_dc, teach_pen);
-                    RoundRect(mem_dc, 330, 12, 478, 40, 10, 10);
+                    RoundRect(mem_dc, 298, 12, 446, 40, 10, 10);
                     SelectObject(mem_dc, old_b);
                     SelectObject(mem_dc, old_p);
                     DeleteObject(teach_bg);
                     DeleteObject(teach_pen);
 
-                    // 4. FOSFORLU NEON ÇİZGİLER (Auto-Fit İzdüşüm ile)
-                    let canvas_pts = app.project_points_to_canvas();
+                    let gear_bg = if app.is_settings_mode {
+                        CreateSolidBrush(rgb(18, 118, 104))
+                    } else {
+                        CreateSolidBrush(rgb(32, 40, 56))
+                    };
+                    let gear_pen = if app.is_settings_mode {
+                        CreatePen(PS_SOLID, 1, rgb(70, 255, 200))
+                    } else {
+                        CreatePen(PS_SOLID, 1, rgb(70, 90, 120))
+                    };
+                    let old_b = SelectObject(mem_dc, gear_bg);
+                    let old_p = SelectObject(mem_dc, gear_pen);
+                    RoundRect(mem_dc, 452, 12, 482, 40, 10, 10);
+                    SelectObject(mem_dc, old_b);
+                    SelectObject(mem_dc, old_p);
+                    DeleteObject(gear_bg);
+                    DeleteObject(gear_pen);
+
+                    if app.is_settings_mode {
+                        // Ayarlar Paneli Kutuları
+                        let toggle_bg = if app.hotkey_enabled {
+                            CreateSolidBrush(rgb(18, 128, 92))
+                        } else {
+                            CreateSolidBrush(rgb(64, 38, 46))
+                        };
+                        let toggle_pen = if app.hotkey_enabled {
+                            CreatePen(PS_SOLID, 1, rgb(70, 255, 200))
+                        } else {
+                            CreatePen(PS_SOLID, 1, rgb(185, 85, 95))
+                        };
+                        let old_b = SelectObject(mem_dc, toggle_bg);
+                        let old_p = SelectObject(mem_dc, toggle_pen);
+                        RoundRect(mem_dc, 344, 134, 492, 170, 10, 10);
+                        SelectObject(mem_dc, old_b);
+                        SelectObject(mem_dc, old_p);
+                        DeleteObject(toggle_bg);
+                        DeleteObject(toggle_pen);
+
+                        let key_bg = if app.is_capturing_hotkey {
+                            CreateSolidBrush(rgb(155, 105, 18))
+                        } else {
+                            CreateSolidBrush(rgb(24, 30, 44))
+                        };
+                        let key_pen = if app.is_capturing_hotkey {
+                            CreatePen(PS_SOLID, 2, rgb(255, 225, 95))
+                        } else {
+                            CreatePen(PS_SOLID, 1, rgb(64, 80, 110))
+                        };
+                        let old_b = SelectObject(mem_dc, key_bg);
+                        let old_p = SelectObject(mem_dc, key_pen);
+                        RoundRect(mem_dc, 246, 194, 386, 230, 10, 10);
+                        SelectObject(mem_dc, old_b);
+                        SelectObject(mem_dc, old_p);
+                        DeleteObject(key_bg);
+                        DeleteObject(key_pen);
+
+                        let chg_bg = CreateSolidBrush(rgb(36, 48, 70));
+                        let chg_pen = CreatePen(PS_SOLID, 1, rgb(85, 115, 160));
+                        let old_b = SelectObject(mem_dc, chg_bg);
+                        let old_p = SelectObject(mem_dc, chg_pen);
+                        RoundRect(mem_dc, 396, 194, 492, 230, 10, 10);
+                        SelectObject(mem_dc, old_b);
+                        SelectObject(mem_dc, old_p);
+                        DeleteObject(chg_bg);
+                        DeleteObject(chg_pen);
+
+                        let rst_bg = CreateSolidBrush(rgb(26, 33, 48));
+                        let rst_pen = CreatePen(PS_SOLID, 1, rgb(64, 80, 110));
+                        let old_b = SelectObject(mem_dc, rst_bg);
+                        let old_p = SelectObject(mem_dc, rst_pen);
+                        RoundRect(mem_dc, 246, 254, 492, 288, 10, 10);
+                        SelectObject(mem_dc, old_b);
+                        SelectObject(mem_dc, old_p);
+                        DeleteObject(rst_bg);
+                        DeleteObject(rst_pen);
+                    } else {
+                        // 4. FOSFORLU NEON ÇİZGİLER (Auto-Fit İzdüşüm ile)
+                        let canvas_pts = app.project_points_to_canvas();
                     if canvas_pts.len() >= 2 {
                         let glow_color = if app.is_teaching_mode {
                             rgb(230, 160, 20)
@@ -1785,6 +2156,7 @@ unsafe extern "system" fn hud_wnd_proc(hwnd: HWND, msg: UINT, wparam: WPARAM, lp
                         SelectObject(mem_dc, old_p);
                         DeleteObject(dot_brush);
                         DeleteObject(dot_pen2);
+                    }
                     }
 
                     SetBkMode(mem_dc, TRANSPARENT);
@@ -1840,20 +2212,20 @@ unsafe extern "system" fn hud_wnd_proc(hwnd: HWND, msg: UINT, wparam: WPARAM, lp
 
                     // Kapatma Butonu [✕]
                     SetTextColor(mem_dc, rgb(235, 95, 95));
-                    let mut close_rect = RECT { left: 485, top: 12, right: 522, bottom: 40 };
+                    let mut close_rect = RECT { left: 488, top: 12, right: 520, bottom: 40 };
                     let close_text = to_wide("✕");
                     DrawTextW(mem_dc, close_text.as_ptr(), -1, &mut close_rect, DT_CENTER | DT_SINGLELINE | DT_VCENTER);
                     SelectObject(mem_dc, old_f);
                     DeleteObject(title_font);
 
-                    // [🎯 Harf Öğret (T)] Buton Yazısı
+                    // [🎯 Harf Öğret (T)] ve [⚙] Buton Yazıları
                     let btn_font = CreateFontW(
                         13, 0, 0, 0, 600, 0, 0, 0, 1, 0, 0, 2, 0,
                         to_wide("Segoe UI").as_ptr(),
                     );
                     let old_f = SelectObject(mem_dc, btn_font);
                     SetTextColor(mem_dc, rgb(240, 245, 255));
-                    let mut teach_rect = RECT { left: 332, top: 12, right: 476, bottom: 40 };
+                    let mut teach_rect = RECT { left: 300, top: 12, right: 444, bottom: 40 };
                     let teach_label = if app.is_teaching_mode {
                         format!("🎯 Öğretiliyor: '{}'", app.teaching_letter)
                     } else {
@@ -1861,8 +2233,67 @@ unsafe extern "system" fn hud_wnd_proc(hwnd: HWND, msg: UINT, wparam: WPARAM, lp
                     };
                     let teach_wide = to_wide(&teach_label);
                     DrawTextW(mem_dc, teach_wide.as_ptr(), -1, &mut teach_rect, DT_CENTER | DT_SINGLELINE | DT_VCENTER);
+
+                    let mut gear_rect = RECT { left: 452, top: 12, right: 482, bottom: 40 };
+                    let gear_wide = to_wide("⚙");
+                    DrawTextW(mem_dc, gear_wide.as_ptr(), -1, &mut gear_rect, DT_CENTER | DT_SINGLELINE | DT_VCENTER);
                     SelectObject(mem_dc, old_f);
                     DeleteObject(btn_font);
+
+                    if app.is_settings_mode {
+                        let set_title_font = CreateFontW(
+                            17, 0, 0, 0, 700, 0, 0, 0, 1, 0, 0, 2, 0,
+                            to_wide("Segoe UI").as_ptr(),
+                        );
+                        let old_f = SelectObject(mem_dc, set_title_font);
+                        SetTextColor(mem_dc, rgb(70, 255, 200));
+                        let mut st_hdr = RECT { left: 44, top: 84, right: 492, bottom: 114 };
+                        DrawTextW(mem_dc, to_wide("⚙️ Açma Kısayolu Ayarları").as_ptr(), -1, &mut st_hdr, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
+                        SelectObject(mem_dc, old_f);
+                        DeleteObject(set_title_font);
+
+                        let set_font = CreateFontW(
+                            14, 0, 0, 0, 600, 0, 0, 0, 1, 0, 0, 2, 0,
+                            to_wide("Segoe UI").as_ptr(),
+                        );
+                        let old_f = SelectObject(mem_dc, set_font);
+                        SetTextColor(mem_dc, rgb(225, 232, 245));
+                        let mut l1 = RECT { left: 44, top: 134, right: 330, bottom: 170 };
+                        DrawTextW(mem_dc, to_wide("Klavye ile Açma Kısayolu").as_ptr(), -1, &mut l1, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
+
+                        let mut l2 = RECT { left: 44, top: 194, right: 240, bottom: 230 };
+                        DrawTextW(mem_dc, to_wide("Atanan Kısayol").as_ptr(), -1, &mut l2, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
+
+                        SetTextColor(mem_dc, rgb(245, 250, 255));
+                        let mut t_rc = RECT { left: 344, top: 134, right: 492, bottom: 170 };
+                        let t_txt = if app.hotkey_enabled { "Açık" } else { "Kapalı" };
+                        DrawTextW(mem_dc, to_wide(t_txt).as_ptr(), -1, &mut t_rc, DT_CENTER | DT_SINGLELINE | DT_VCENTER);
+
+                        let mut k_rc = RECT { left: 246, top: 194, right: 386, bottom: 230 };
+                        let k_txt = if app.is_capturing_hotkey {
+                            "Tuşa basın...".to_string()
+                        } else {
+                            format_hotkey(app.hotkey_mods, app.hotkey_vk)
+                        };
+                        DrawTextW(mem_dc, to_wide(&k_txt).as_ptr(), -1, &mut k_rc, DT_CENTER | DT_SINGLELINE | DT_VCENTER);
+
+                        let mut c_rc = RECT { left: 396, top: 194, right: 492, bottom: 230 };
+                        let c_txt = if app.is_capturing_hotkey { "Bekleniyor" } else { "Değiştir" };
+                        DrawTextW(mem_dc, to_wide(c_txt).as_ptr(), -1, &mut c_rc, DT_CENTER | DT_SINGLELINE | DT_VCENTER);
+
+                        SetTextColor(mem_dc, rgb(175, 190, 215));
+                        let mut r_rc = RECT { left: 246, top: 254, right: 492, bottom: 288 };
+                        DrawTextW(mem_dc, to_wide("Varsayılana Sıfırla (Ctrl + Space)").as_ptr(), -1, &mut r_rc, DT_CENTER | DT_SINGLELINE | DT_VCENTER);
+
+                        SetTextColor(mem_dc, rgb(135, 150, 175));
+                        let mut h1 = RECT { left: 44, top: 316, right: 492, bottom: 342 };
+                        DrawTextW(mem_dc, to_wide("• 2 parmak çift dokunuş (Tık-Tık) her zaman aktiftir.").as_ptr(), -1, &mut h1, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
+                        let mut h2 = RECT { left: 44, top: 344, right: 492, bottom: 370 };
+                        DrawTextW(mem_dc, to_wide("• Kısayol kapatılırsa klavyeden yanlışlıkla pencere açılmaz.").as_ptr(), -1, &mut h2, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
+
+                        SelectObject(mem_dc, old_f);
+                        DeleteObject(set_font);
+                    }
 
                     // Durum Metni
                     let status_font = CreateFontW(
@@ -1980,12 +2411,26 @@ unsafe extern "system" fn hud_wnd_proc(hwnd: HWND, msg: UINT, wparam: WPARAM, lp
 
                 if let Some(ref mut app) = GLOBAL_APP {
                     app.last_activity_time = Instant::now();
-                    if x >= 482 && x <= 530 && y >= 8 && y <= 45 {
+                    if x >= 486 && x <= 526 && y >= 8 && y <= 45 {
                         app.hide_hud("[✕] Butonuna Tıklandı");
                         return 0;
                     }
-                    if x >= 328 && x <= 480 && y >= 8 && y <= 45 {
+                    if x >= 450 && x <= 484 && y >= 8 && y <= 45 {
+                        app.toggle_settings_mode();
+                        return 0;
+                    }
+                    if x >= 296 && x <= 448 && y >= 8 && y <= 45 {
                         app.toggle_teaching_mode();
+                        return 0;
+                    }
+                    if app.is_settings_mode {
+                        if x >= 344 && x <= 492 && y >= 134 && y <= 170 {
+                            app.toggle_hotkey_enabled();
+                        } else if x >= 396 && x <= 492 && y >= 194 && y <= 230 {
+                            app.start_hotkey_capture();
+                        } else if x >= 246 && x <= 492 && y >= 254 && y <= 288 {
+                            app.reset_hotkey_default();
+                        }
                         return 0;
                     }
                     if app.is_teaching_mode && y >= app.win_h - 50 && y <= app.win_h - 8 {
@@ -2165,18 +2610,45 @@ unsafe extern "system" fn hud_wnd_proc(hwnd: HWND, msg: UINT, wparam: WPARAM, lp
                 0
             }
 
-            WM_KEYDOWN => {
+            WM_KEYDOWN | WM_SYSKEYDOWN => {
                 let vk = wparam as u32;
                 if let Some(ref mut app) = GLOBAL_APP {
                     app.last_activity_time = Instant::now();
+                    if app.is_settings_mode && app.is_capturing_hotkey {
+                        let is_mod_key = matches!(
+                            vk,
+                            0x10 | 0x11 | 0x12 | 0xA0..=0xA5 | 0x5B | 0x5C
+                        );
+                        if !is_mod_key {
+                            let mut mods: u32 = 0;
+                            if GetAsyncKeyState(VK_CONTROL) < 0 {
+                                mods |= MOD_CONTROL;
+                            }
+                            if GetAsyncKeyState(VK_MENU) < 0 {
+                                mods |= MOD_ALT;
+                            }
+                            if GetAsyncKeyState(VK_SHIFT) < 0 {
+                                mods |= MOD_SHIFT;
+                            }
+                            if vk == VK_ESCAPE && mods == 0 {
+                                app.cancel_hotkey_capture();
+                            } else if mods != 0 || (0x70..=0x7B).contains(&vk) {
+                                app.finish_hotkey_capture(mods, vk);
+                            } else {
+                                app.status_text = "⚠️ Ctrl, Alt veya Shift ile birlikte bir tuşa basın (veya F1-F12).".to_string();
+                                InvalidateRect(hwnd, null(), 0);
+                            }
+                        }
+                        return 0;
+                    }
                     if vk == VK_ESCAPE {
                         app.hide_hud("ESC Tuşu (WM_KEYDOWN)");
-                    } else if vk == VK_T && !app.is_teaching_mode {
+                    } else if vk == VK_T && !app.is_teaching_mode && !app.is_settings_mode {
                         app.toggle_teaching_mode();
                     } else if app.is_teaching_mode && (0x41..=0x5A).contains(&vk) {
                         let ch = (vk as u8) as char;
                         app.select_teaching_letter(ch);
-                    } else if vk == 0x20 || vk == 0x0D {
+                    } else if !app.is_settings_mode && (vk == VK_SPACE || vk == VK_RETURN) {
                         app.evaluate_drawing();
                     }
                 }
@@ -2195,7 +2667,16 @@ unsafe extern "system" fn hud_wnd_proc(hwnd: HWND, msg: UINT, wparam: WPARAM, lp
                     let h_menu = CreatePopupMenu();
                     if !h_menu.is_null() {
                         let is_paused = GLOBAL_APP.as_ref().map(|a| a.is_paused).unwrap_or(false);
-                        AppendMenuW(h_menu, MF_STRING, 101, to_wide("✨ Çizim Ekranını Aç (Ctrl+Space)").as_ptr());
+                        let open_label = if let Some(ref a) = GLOBAL_APP {
+                            if a.hotkey_enabled {
+                                format!("✨ Çizim Ekranını Aç ({})", format_hotkey(a.hotkey_mods, a.hotkey_vk))
+                            } else {
+                                "✨ Çizim Ekranını Aç".to_string()
+                            }
+                        } else {
+                            "✨ Çizim Ekranını Aç".to_string()
+                        };
+                        AppendMenuW(h_menu, MF_STRING, 101, to_wide(&open_label).as_ptr());
                         AppendMenuW(h_menu, MF_STRING, 102, to_wide("🎯 Harf Öğret / Kalibre Et (T)").as_ptr());
                         AppendMenuW(h_menu, MF_STRING, 103, to_wide("📂 config.json Ayarlarını Aç").as_ptr());
                         AppendMenuW(h_menu, MF_SEPARATOR, 0, null());
@@ -2500,9 +2981,9 @@ fn main() {
     };
 
     app.hud_hwnd = hud_hwnd;
+    app.apply_global_hotkey();
 
     unsafe {
-        RegisterHotKey(hud_hwnd, 1, MOD_CONTROL, VK_SPACE);
         MOUSE_HOOK = SetWindowsHookExW(WH_MOUSE_LL, mouse_ll_proc, null_mut(), 0);
 
         let rids = [RAWINPUTDEVICE {
