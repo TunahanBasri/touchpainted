@@ -1249,6 +1249,9 @@ impl AppState {
         self.last_activity_time = Instant::now();
 
         if self.is_teaching_mode {
+            unsafe {
+                SetForegroundWindow(self.hud_hwnd);
+            }
             log_line(&format!("🎯 [ÖĞRETME MODU AÇILDI] Hedef Harf: '{}'", self.teaching_letter));
             self.status_text = format!(
                 "🎯 ÖĞRETME MODU: Klavyeden harf seçin (Şu an: '{}') ve touchpad'de şekli çizin!",
@@ -2084,6 +2087,11 @@ unsafe extern "system" fn hud_wnd_proc(hwnd: HWND, msg: UINT, wparam: WPARAM, lp
                         remove_tray_icon(hwnd);
                         PostQuitMessage(0);
                     }
+                    106 => {
+                        if let Some(ref mut app) = GLOBAL_APP {
+                            app.show_hud("WH_MOUSE_LL 2-Parmak Çift Tık");
+                        }
+                    }
                     _ => {}
                 }
                 0
@@ -2108,12 +2116,17 @@ unsafe extern "system" fn hud_wnd_proc(hwnd: HWND, msg: UINT, wparam: WPARAM, lp
 // ============================================================================
 static mut MOUSE_HOOK: HANDLE = null_mut();
 static mut LAST_RBUTTON_TAP: Option<Instant> = None;
+static mut SWALLOW_RBUTTON_UP: bool = false;
 
 unsafe extern "system" fn mouse_ll_proc(n_code: i32, w_param: WPARAM, l_param: LPARAM) -> LRESULT {
     unsafe {
         if n_code >= 0 {
             let msg = w_param as UINT;
-            let (is_open, is_paused, ptp_active) = if let Some(ref app) = GLOBAL_APP {
+            if msg == WM_RBUTTONUP && SWALLOW_RBUTTON_UP {
+                SWALLOW_RBUTTON_UP = false;
+                return 1;
+            }
+            let (is_open, is_paused, ptp_active, hud_hwnd) = if let Some(ref app) = GLOBAL_APP {
                 let recent_ptp = app
                     .last_ptp_packet_time
                     .map(|t| t.elapsed().as_millis() < 160)
@@ -2122,9 +2135,10 @@ unsafe extern "system" fn mouse_ll_proc(n_code: i32, w_param: WPARAM, l_param: L
                     app.is_hud_visible,
                     app.is_paused,
                     app.active_finger_count > 0 || recent_ptp,
+                    app.hud_hwnd,
                 )
             } else {
-                (false, false, false)
+                (false, false, false, null_mut())
             };
 
             if !is_open {
@@ -2134,8 +2148,9 @@ unsafe extern "system" fn mouse_ll_proc(n_code: i32, w_param: WPARAM, l_param: L
                         let dur = now.duration_since(last).as_millis();
                         if dur >= 30 && dur <= 500 {
                             LAST_RBUTTON_TAP = None;
-                            if let Some(ref mut app) = GLOBAL_APP {
-                                app.show_hud("WH_MOUSE_LL 2-Parmak Çift Tık");
+                            SWALLOW_RBUTTON_UP = true;
+                            if !hud_hwnd.is_null() {
+                                PostMessageW(hud_hwnd, WM_COMMAND, 106, 0);
                             }
                             return 1;
                         }
