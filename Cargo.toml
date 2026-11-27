@@ -1,6 +1,6 @@
 [package]
 name = "touchpainted"
-version = "1.0.0"
+version = "1.0.1"
 edition = "2024"
 authors = ["TunahanBasri"]
 description = "Zero-dependency Windows 10/11 Precision Touchpad gesture launcher — draw letters on your laptop touchpad to launch apps instantly"
