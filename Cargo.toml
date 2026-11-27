@@ -2,7 +2,13 @@
 name = "touchpainted"
 version = "1.0.0"
 edition = "2024"
-description = "Zero-dependency gesture launcher for precision touchpads"
+authors = ["TunahanBasri"]
+description = "Zero-dependency Windows 10/11 Precision Touchpad gesture launcher — draw letters on your laptop touchpad to launch apps instantly"
+repository = "https://github.com/TunahanBasri/touchpainted"
+homepage = "https://github.com/TunahanBasri/touchpainted"
+readme = "README.md"
+keywords = ["touchpad", "gesture-recognition", "launcher", "windows", "hid"]
+categories = ["os::windows-apis", "gui"]
 license-file = "LICENSE"
 publish = false
 

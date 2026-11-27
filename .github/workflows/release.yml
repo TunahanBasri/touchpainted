@@ -1,0 +1,54 @@
+name: Build & Release
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    name: Windows x64 Release
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install stable Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build optimized release binary
+        run: cargo build --release --locked
+
+      - name: Package release archive
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist/touchpainted | Out-Null
+          Copy-Item target/release/touchpainted.exe dist/touchpainted/
+          Copy-Item config.json dist/touchpainted/
+          Copy-Item LICENSE dist/touchpainted/
+          Copy-Item README.md dist/touchpainted/
+          Compress-Archive -Path dist/touchpainted/* -DestinationPath touchpainted-windows-x64.zip -Force
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: touchpainted-windows-x64
+          path: |
+            target/release/touchpainted.exe
+            touchpainted-windows-x64.zip
+
+      - name: Publish GitHub Release on version tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "touchpa(inte)d ${{ github.ref_name }}"
+          generate_release_notes: true
+          files: |
+            target/release/touchpainted.exe
+            touchpainted-windows-x64.zip
