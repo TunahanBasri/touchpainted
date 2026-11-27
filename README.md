@@ -1,191 +1,117 @@
-# touchpa(inte)d — Windows Precision Touchpad Gesture Launcher
+# touchpainted
 
 <p align="center">
-  <img src="assets/banner.svg" alt="touchpa(inte)d — Windows 10/11 Precision Touchpad Gesture Launcher Banner" width="100%"/>
+  <img src="assets/banner.svg" alt="touchpa(inte)d banner" width="100%"/>
 </p>
 
 <p align="center">
-  <a href="https://github.com/TunahanBasri/touchpainted/actions"><img src="https://img.shields.io/github/actions/workflow/status/TunahanBasri/touchpainted/release.yml?branch=main&style=flat-square&label=Build&color=46FFC8&labelColor=15181F" alt="Build Status"/></a>
-  <a href="https://github.com/TunahanBasri/touchpainted/releases/latest"><img src="https://img.shields.io/github/v/release/TunahanBasri/touchpainted?style=flat-square&label=Release&color=00D4FF&labelColor=15181F" alt="Latest Release"/></a>
-  <img src="https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011%20(x64)-46FFC8?style=flat-square&labelColor=15181F" alt="Platform Windows 10/11"/>
-  <img src="https://img.shields.io/badge/Rust-Zero%20Crates-00D4FF?style=flat-square&labelColor=15181F" alt="Zero Dependencies Rust"/>
-  <img src="https://img.shields.io/badge/Binary-~230%20KB-46FFC8?style=flat-square&labelColor=15181F" alt="Binary Size 230 KB"/>
-  <img src="https://img.shields.io/badge/Touchpad-HID%200x000D%3A0x0005-00D4FF?style=flat-square&labelColor=15181F" alt="Raw HID Digitizer"/>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-Non--Commercial-FFBE3C?style=flat-square&labelColor=15181F" alt="Non-Commercial Personal License"/></a>
+  <a href="https://github.com/TunahanBasri/touchpainted/actions"><img src="https://img.shields.io/github/actions/workflow/status/TunahanBasri/touchpainted/release.yml?branch=main&style=flat-square&label=build" alt="Build status"/></a>
+  <a href="https://github.com/TunahanBasri/touchpainted/releases/latest"><img src="https://img.shields.io/github/v/release/TunahanBasri/touchpainted?style=flat-square&label=release" alt="Latest release"/></a>
+  <img src="https://img.shields.io/badge/platform-Windows%2010%20%7C%2011%20x64-blue?style=flat-square" alt="Platform"/>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-non--commercial-orange?style=flat-square" alt="License"/></a>
 </p>
 
 <p align="center">
-  <a href="#-türkçe-genel-bakış"><strong>🇹🇷 Türkçe</strong></a> ·
-  <a href="#-english-overview"><strong>🇬🇧 English</strong></a> ·
-  <a href="https://github.com/TunahanBasri/touchpainted/releases/latest"><strong>📥 İndir / Download (.exe)</strong></a> ·
-  <a href="#️-yapılandırma--configuration-configjson"><strong>⚙️ Yapılandırma / Config</strong></a> ·
-  <a href="#-mimari--architecture"><strong>📐 Mimari</strong></a> ·
-  <a href="#-sıkça-sorulan-sorular--faq"><strong>❓ SSS / FAQ</strong></a>
+  <a href="README.tr.md">Türkçe</a> ·
+  <a href="https://github.com/TunahanBasri/touchpainted/releases/latest">Download</a>
 </p>
 
----
+touchpainted is a small Windows tray application that turns a Precision Touchpad into a gesture launcher. Double-tap the touchpad with two fingers, draw a letter with one or two fingers without pressing down, and the program bound to that letter starts.
+
+It is written in Rust with no external crates. It calls Win32 and the Windows HID parser (`hid.dll`) directly, and the release build is a single executable of about 230 KB.
 
 <p align="center">
-  <img src="assets/demo.gif" alt="touchpa(inte)d demo — double-tap laptop touchpad and draw letter C to launch apps on Windows" width="800"/>
+  <img src="assets/demo.gif" alt="Two-finger double-tap on a laptop touchpad, then drawing the letter C" width="780"/>
 </p>
 
----
+## Features
 
-## 🇹🇷 Türkçe Genel Bakış
+- **Raw touchpad input.** Reads Precision Touchpad reports (HID usage page `0x0D`, usage `0x05`) directly, so two-finger strokes are captured instead of being converted into scrolling by Windows.
+- **No pressure needed.** Gliding one or two fingers over the surface is enough; no click or drag.
+- **Stable two-finger strokes.** Movement is accumulated from centroid deltas. When a second finger lands or lifts, the stroke does not jump to the new centroid.
+- **Auto-fit canvas.** Points are stored in unclamped coordinates and re-centered and scaled into the drawing area, so arcs near the edge are not flattened.
+- **Recognition.** Built-in letters (`C`, `V`, `M`, `S`, `W`) are scored with simple geometric rules combined with a [$1 Unistroke](https://depts.washington.edu/acelab/proj/dollar/index.html) template matcher (64 resampled points, ±24° rotation search).
+- **Teaching mode.** Record your own version of any letter `A`–`Z`. The template is saved to `config.json` and preferred during matching.
+- **Event-driven.** There is no polling loop. The process sleeps in `GetMessageW` and wakes on touchpad input, low-level mouse hook events, and its own timers while the overlay is open.
+- **Single instance.** Starting the executable again brings up the running instance instead of launching a second one.
 
-**touchpa(inte)d** (`touchpainted`), dizüstü bilgisayarınızın **Windows 10 / 11 Precision Touchpad** yüzeyinde **1 veya 2 parmağınızla sıfır baskıyla harf çizerek** (`C`, `V`, `M`, `S`, `W` veya kendi öğrettiğiniz özel şekiller) uygulamaları, klasörleri ve web bağlantılarını saliseler içinde açmanızı sağlayan **sıfır harici bağımlılıklı (Zero-Dependency)** yerel bir Windows hızlı başlatıcısıdır.
+## Requirements
 
-### ✨ Öne Çıkan Özellikler
-- **⚡ ~230 KB Tek Dosya & Sıfır Boşta CPU Tüketimi:**
-  - Tamamen **Rust** ile doğrudan Win32 (`user32.dll`, `gdi32.dll`, `shell32.dll`, `kernel32.dll`, `ole32.dll`) ve Windows HID (`hid.dll`) FFI çağrıları kullanılarak geliştirilmiştir.
-  - Harici crate/paket veya ek çalışma zamanı (runtime) gerektirmez. Olay güdümlü (`GetMessageW`) çalışır; touchpad'e dokunulmadığında tamamen uyur.
-- **🖐️ Doğrudan Precision Touchpad (`0x000D:0x0005`) Ham HID Okuyucu:**
-  - Fiziksel tıklamaya/bastırmaya gerek kalmadan (**Sıfır Baskı**) 1 veya 2 parmağınızı yüzeyde kaydırarak çizim yapabilirsiniz.
-  - **Delta-Centroid (Ortak Merkez) Motoru:** İki parmak yüzeye farklı milisaniyelerde değdiğinde parmaklar arasına düz sıçrama çizgisi çekmez (`0 -> 1 -> 2 -> 1` geçişlerini sönümler).
-- **📐 Dinamik Otomatik Sığdırma (`Auto-Fit`) Tuvali:**
-  - Parmağınızı touchpad'in neresine koyarsanız koyun çizim merkezden başlar; `C` gibi yukarı kavisli harfler tuval kenarlarına çarpıp düzleşmez, anlık olarak merkeze ölçeklenir.
-- **🧠 Hibrit Harf Tanıma (`Geometrik Topoloji` + `$1 Unistroke`) & Canlı Harf Öğretme (`T`):**
-  - El yazısı farklarına dayanıklı geometrik kural motoru ile 64-noktalı oran koruyucu `$1 Unistroke` algoritmasını birleştirir.
-  - **`[🎯 Harf Öğret (T)]`** modunda alttaki harf butonlarına tıklayarak veya klavyeden `A–Z` seçerek kendi çizim stilinizi `config.json` içine kaydedebilirsiniz.
-- **🛡️ Giriş İzolasyonu & Tek Kopya Kilidi:**
-  - HUD açıkken arka plandaki sayfalarda istenmeyen kaydırma (`WM_MOUSEWHEEL`) engellenir ve harici fare imlecini oynatmak yanlış çizim oluşturmaz.
+- Windows 10 or 11, x64.
+- A Precision Touchpad for gesture input. Without one, the overlay can still be opened with `Ctrl+Space` and drawn on with the mouse by holding the left button inside the canvas.
 
-### 🎮 Hızlı Kullanım (Türkçe)
-1. **İndir ve Çalıştır:** [Releases](https://github.com/TunahanBasri/touchpainted/releases/latest) sayfasından `touchpainted.exe` dosyasını indirip çalıştırın (sağ alt Sistem Tepsisine yerleşir).
-2. **Çizim Ekranını Aç:** Touchpad'e **2 parmakla çift dokunun ("Tık-Tık")**, klavyeden **`Ctrl + Space`** tuşlarına basın veya tepsi simgesine sol tıklayın.
-3. **Sıfır Baskıyla Çiz:** Touchpad üzerinde 1 veya 2 parmağınızı kaydırarak harfi çizin (`C`, `V`, `M`, `S`, `W`). Parmağınızı kaldırdığınız anda hedef uygulama açılır.
-4. **Kendi Çizimini Öğret:** HUD açıkken **`T`** tuşuna basın, alttaki kutucuklardan harfi seçin ve touchpad'de 1 kez çizerek kaydedin.
+## Usage
 
----
+1. Download `touchpainted.exe` (or the zip) from [Releases](https://github.com/TunahanBasri/touchpainted/releases/latest) and run it. It has no installer and lives in the system tray. `config.json` is created next to the executable on first run.
+2. Open the overlay with a two-finger double-tap, `Ctrl+Space`, or a left click on the tray icon.
+3. Draw a letter and lift your fingers. The bound program starts and the overlay closes.
+4. To close without launching, press `Esc`, click the close button, or wait for the idle timeout.
 
-## 🇬🇧 English Overview
+### Teaching a letter
 
-**touchpa(inte)d** (`touchpainted`) is an ultra-lightweight, **zero-dependency native gesture launcher for Windows 10 & Windows 11 laptops**. Double-tap your **Windows Precision Touchpad** with two fingers to summon a sleek dark HUD canvas, glide **1 or 2 fingers with zero click pressure** to draw a letter (`C`, `V`, `M`, `S`, `W`, or any custom A–Z glyph you train), and launch applications, folders, system URIs, or websites instantaneously.
+While the overlay is open, press `T` or click the teach button in the title bar. Pick a letter from the buttons at the bottom of the window or press `A`–`Z`, then draw it once. The stroke is normalized and written to `config.json`.
 
-### 🚀 Key Highlights
-- **Zero External Crates (`~230 KB` Standalone `.exe`):** Pure Rust talking directly to Win32 GDI/User32 and Windows Raw HID (`hid.dll`). No runtime dependencies, offline buildable, and **0.00% idle CPU** via event-driven `GetMessageW` sleeping.
-- **Direct Raw HID Digitizer (`0x000D:0x0005`) Engine:** Auto-discovers touchpad contact link collections and `LogicalMin..LogicalMax` X/Y resolution at runtime — hardware-agnostic across modern Windows 10/11 laptops.
-- **Delta-Centroid Multi-Finger Smoothing:** Eliminates straight-line artifacts when placing or lifting a second finger (`0 -> 1 -> 2 -> 1` contact transitions).
-- **Dynamic Auto-Fit Projection:** Unclamped virtual coordinates dynamically center and scale onto the HUD canvas in real time so upward arcs (such as `'C'`) never clip against window borders.
-- **Hybrid Gesture Recognizer + Live Calibration (`[T]`):** Combines invariant geometric topology rules with a 64-point uniform-scaled `$1 Unistroke` matcher, plus 1-stroke custom handwriting training per letter (`A–Z`).
+## Configuration
 
-### ⚡ Comparison
-
-| Feature | Traditional Script / Runtime Launchers | **touchpa(inte)d** |
-| :--- | :--- | :--- |
-| **Binary / Disk Footprint** | 50 MB – 180 MB | **~230 KB (Single `.exe`)** |
-| **External Dependencies** | Heavy runtimes / dozens of crates | **0 Crates (Pure Win32 + HID FFI)** |
-| **2-Finger Touchpad Drawing** | Blocked by OS scroll (`WM_MOUSEWHEEL`) | **Native Raw HID (`0x000D:0x0005`)** |
-| **Pressing / Clicking Required?** | Usually requires click-and-drag | **Zero-Pressure Glide (1 or 2 Fingers)** |
-| **Idle CPU Usage** | Background polling timers | **0% Idle (Event-Driven)** |
-
----
-
-## ⚙️ Yapılandırma / Configuration (`config.json`)
-
-Uygulama ilk çalışmada yanında [`config.json`](config.json) dosyasını otomatik oluşturur (Sistem Tepsisi sağ tık menüsünden de doğrudan açabilirsiniz). Her harfe `.exe` programı, klasör yolu, sistem URI komutu (`ms-settings:`) veya `https://...` web adresi bağlayabilirsiniz:
+Each entry in `config.json` binds a letter to something `ShellExecuteW` can open: an executable, a folder, a URI such as `ms-settings:`, or an `https://` URL.
 
 ```json
 {
   "idle_timeout_ms": 4000,
   "gestures": [
-    {
-      "letter": "C",
-      "name": "Hesap Makinesi",
-      "app": "calc.exe",
-      "param": "",
-      "custom_points": []
-    },
-    {
-      "letter": "V",
-      "name": "Dosya Gezgini",
-      "app": "explorer.exe",
-      "param": "",
-      "custom_points": []
-    },
-    {
-      "letter": "M",
-      "name": "Çizim Tuvali",
-      "app": "mspaint.exe",
-      "param": "",
-      "custom_points": []
-    },
-    {
-      "letter": "S",
-      "name": "Ayarlar",
-      "app": "ms-settings:",
-      "param": "",
-      "custom_points": []
-    },
-    {
-      "letter": "W",
-      "name": "Not Defteri",
-      "app": "notepad.exe",
-      "param": "",
-      "custom_points": []
-    }
+    { "letter": "C", "name": "Hesap Makinesi", "app": "calc.exe",     "param": "", "custom_points": [] },
+    { "letter": "V", "name": "Dosya Gezgini",  "app": "explorer.exe", "param": "", "custom_points": [] },
+    { "letter": "M", "name": "Çizim Tuvali",   "app": "mspaint.exe",  "param": "", "custom_points": [] },
+    { "letter": "S", "name": "Ayarlar",        "app": "ms-settings:", "param": "", "custom_points": [] },
+    { "letter": "W", "name": "Not Defteri",    "app": "notepad.exe",  "param": "", "custom_points": [] }
   ]
 }
 ```
 
----
+| Field | Meaning |
+| :--- | :--- |
+| `idle_timeout_ms` | Inactivity time before the overlay closes. Teaching mode always allows at least 12 seconds. |
+| `letter` | The letter to draw. |
+| `name` | Label shown in the overlay. |
+| `app` | Executable, folder, URI, or URL to open. |
+| `param` | Optional command-line arguments. |
+| `custom_points` | Normalized template written by teaching mode. Leave empty to use the built-in recognizer. |
 
-## 🛠️ Derleme / Build from Source
+The config file can also be opened from the tray menu.
 
-- **OS:** Windows 10 / Windows 11 (x64)
-- **Toolchain:** Rust (`rustc 1.85+`, MSVC) — *0 external crates, builds completely offline.*
+## Building
+
+Requires Rust 1.85 or newer (edition 2024) with the MSVC toolchain. There are no dependencies to download.
 
 ```powershell
 git clone https://github.com/TunahanBasri/touchpainted.git
 cd touchpainted
 cargo build --release
-
-# Run:
 .\target\release\touchpainted.exe
 ```
 
-*(Tanılama logları için / For diagnostic logging, pass `--log` to write `touchpad_log.txt`.)*
+Run with `--log` to write diagnostic output to `touchpad_log.txt` next to the executable.
 
----
+## How it works
 
-## 📐 Mimari / Architecture
+| Part | Implementation |
+| :--- | :--- |
+| Touchpad input | `RegisterRawInputDevices` with `HidP_GetValueCaps`, `HidP_GetUsages`, `HidP_GetUsageValue`. Contact collections and X/Y ranges are discovered at runtime, not hardcoded. |
+| Tap fallback and scroll blocking | `WH_MOUSE_LL` low-level mouse hook. The hook only posts messages and returns immediately. |
+| Stroke tracking | Centroid deltas accumulated into unclamped virtual coordinates. |
+| Recognition | Geometric rules plus `$1 Unistroke` matching. |
+| Rendering | Double-buffered GDI, tray icon via `Shell_NotifyIconW`. |
+| Launching | `ShellExecuteW` on a background thread so the input thread is never blocked. |
 
-| Katman / Layer | Teknoloji / API | Görev / Role |
-| :--- | :--- | :--- |
-| **Donanım HID Katmanı** | `RegisterRawInputDevices` (`0x000D:0x0005`) + `hid.dll` (`HidP_GetValueCaps`, `HidP_GetUsages`, `HidP_GetUsageValue`) | Touchpad yüzeyindeki 5 parmağa kadar `Tip Switch` ve `X/Y` koordinatlarını çalışma zamanında otomatik keşfeder ve okur. |
-| **Giriş İzolasyon Katmanı** | `SetWindowsHookExW(WH_MOUSE_LL)` | 2-parmak çift tık algılamasını destekler ve HUD açıkken arka plan kaydırmalarını (`WM_MOUSEWHEEL`) bloke eder. |
-| **Hareket & Ölçekleme Katmanı** | `Delta-Centroid` + `Auto-Fit İzdüşüm` | Parmak değişim sıçramalarını filtreler ve çizimi tuval sınırlarına çarptırmadan merkeze ölçekler. |
-| **Tanıma Motoru** | `compute_geometric_scores` + `$1 Unistroke` (`64-point Uniform Resample`) | Hem topolojik geometri kuralları hem de açısal şablon benzerliğiyle `%` eşleşme skoru üretir. |
-| **Arayüz & Sistem Tepsisi** | Win32 GDI Double-Buffered `BitBlt` + `Shell_NotifyIconW` | Titremesiz (flicker-free) çizim tuvali, tıklanabilir kalibrasyon barı ve sistem tepsisi menüsü sunar. |
+## Known limitations
 
----
+- The user interface text is Turkish only.
+- The built-in recognizer covers `C`, `V`, `M`, `S`, `W`. Other letters work after being taught.
+- Two-finger double-tap detection depends on the touchpad driver. If it is unreliable on your device, use `Ctrl+Space`.
+- The executable is not code-signed, so SmartScreen may show a warning on first run.
 
-## ❓ Sıkça Sorulan Sorular / FAQ
+## License
 
-<details>
-<summary><strong>Hangi dizüstü bilgisayarlarda çalışır? / Which laptops are supported?</strong></summary>
-<br/>
-Windows 10 veya Windows 11 kullanan ve <em>Windows Precision Touchpad</em> standardını destekleyen tüm modern dizüstü bilgisayarlarda donanım çözünürlüğünü çalışma zamanında otomatik algılayarak çalışır. Ayrıca her zaman <code>Ctrl + Space</code> kısayolu ve sol tıkla fare çizimi yedeği mevcuttur.
-</details>
+Copyright © 2026 TunahanBasri. Released under a [non-commercial personal use license](LICENSE).
 
-<details>
-<summary><strong>Arka planda pil veya işlemci harcar mı? / Does it drain battery in the background?</strong></summary>
-<br/>
-Hayır. Sürekli dönen bir tarama döngüsü (polling loop) yoktur; uygulama Windows mesaj kuyruğunda (<code>GetMessageW</code>) uyur ve yalnızca touchpad etkileşimi olduğunda uyanır.
-</details>
-
-<details>
-<summary><strong>Bir web sitesini nasıl bağlarım? / How do I launch a website URL?</strong></summary>
-<br/>
-<code>config.json</code> içindeki <code>"app"</code> alanına doğrudan <code>"https://..."</code> adresini yazmanız yeterlidir; Windows varsayılan tarayıcınızda otomatik olarak açacaktır.
-</details>
-
----
-
-## 📄 Lisans / License (Ticari Kullanıma Kapalı / Non-Commercial)
-
-Telif Hakkı / Copyright © 2026 **TunahanBasri**. Tüm ticari hakları saklıdır / All commercial rights reserved.
-
-Bu proje **[Ticari Olmayan Kişisel Kullanım Lisansı](LICENSE)** kapsamındadır:
-- ✅ **Kişisel Kullanım Serbest (Personal Use Permitted):** Bireysel ve eğitim amaçlı ücretsiz kullanabilir, inceleyebilir ve kendi bilgisayarınız için derleyebilirsiniz.
-- ❌ **Ticari Kullanım ve Satış Yasak (No Commercial Use):** Yazılımın, kaynak kodunun veya türevlerinin **satılması, ücretli dağıtılması veya ticari ürünlerde kullanılması** kesinlikle yasaktır.
+Personal and educational use, reading the source, and building it yourself are allowed. Selling the software, distributing it for a fee, or including it in a commercial product requires written permission.
