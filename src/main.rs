@@ -333,6 +333,7 @@ unsafe extern "system" {
     fn UnhookWindowsHookEx(hhk: HANDLE) -> BOOL;
     fn CallNextHookEx(hhk: HANDLE, nCode: i32, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
     fn LoadIconW(hInstance: HANDLE, lpIconName: *const u16) -> HICON;
+    fn LoadCursorW(hInstance: HANDLE, lpCursorName: *const u16) -> HANDLE;
     fn CreatePopupMenu() -> HMENU;
     fn AppendMenuW(hMenu: HMENU, uFlags: UINT, uIDNewItem: usize, lpNewItem: *const u16) -> BOOL;
     fn TrackPopupMenu(
@@ -428,12 +429,38 @@ unsafe extern "system" {
     ) -> i32;
 }
 
+#[link(name = "ole32")]
+unsafe extern "system" {
+    fn CoInitializeEx(pvReserved: *mut std::ffi::c_void, dwCoInit: u32) -> i32;
+    fn CoUninitialize();
+}
+
 fn rgb(r: u8, g: u8, b: u8) -> u32 {
     (r as u32) | ((g as u32) << 8) | ((b as u32) << 16)
 }
 
 fn to_wide(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(std::iter::once(0)).collect()
+}
+
+fn spawn_shell_open(app: String, param: String) {
+    std::thread::spawn(move || unsafe {
+        let hr = CoInitializeEx(null_mut(), 0x06);
+        let op = to_wide("open");
+        let file = to_wide(&app);
+        let args = to_wide(&param);
+        ShellExecuteW(
+            null_mut(),
+            op.as_ptr(),
+            file.as_ptr(),
+            if param.is_empty() { null() } else { args.as_ptr() },
+            null(),
+            SW_SHOW,
+        );
+        if hr >= 0 {
+            CoUninitialize();
+        }
+    });
 }
 
 // ============================================================================
@@ -1552,23 +1579,13 @@ impl AppState {
     fn launch_by_letter(&mut self, ch: char) {
         let rule = self.rules.iter().find(|r| r.letter == ch);
         if let Some(r) = rule {
+            let app_str = r.app.clone();
+            let param_str = r.param.clone();
             unsafe {
                 InvalidateRect(self.hud_hwnd, null(), 0);
-                let op = to_wide("open");
-                let file = to_wide(&r.app);
-                let args = to_wide(&r.param);
-
-                ShellExecuteW(
-                    null_mut(),
-                    op.as_ptr(),
-                    file.as_ptr(),
-                    if r.param.is_empty() { null() } else { args.as_ptr() },
-                    null(),
-                    SW_SHOW,
-                );
-
                 SetTimer(self.hud_hwnd, 1002, 700, null_mut());
             }
+            spawn_shell_open(app_str, param_str);
         }
     }
 }
@@ -2056,10 +2073,7 @@ unsafe extern "system" fn hud_wnd_proc(hwnd: HWND, msg: UINT, wparam: WPARAM, lp
                         }
                     }
                     103 => {
-                        let op = to_wide("open");
-                        let file = to_wide("notepad.exe");
-                        let param = to_wide("config.json");
-                        ShellExecuteW(null_mut(), op.as_ptr(), file.as_ptr(), param.as_ptr(), null(), SW_SHOW);
+                        spawn_shell_open("notepad.exe".to_string(), "config.json".to_string());
                     }
                     104 => {
                         if let Some(ref mut app) = GLOBAL_APP {
@@ -2280,7 +2294,7 @@ fn main() {
         cbWndExtra: 0,
         hInstance: h_instance,
         hIcon: unsafe { LoadIconW(null_mut(), 32512 as *const u16) },
-        hCursor: null_mut(),
+        hCursor: unsafe { LoadCursorW(null_mut(), 32512 as *const u16) },
         hbrBackground: null_mut(),
         lpszMenuName: null(),
         lpszClassName: hud_class.as_ptr(),
@@ -2311,20 +2325,12 @@ fn main() {
         RegisterHotKey(hud_hwnd, 1, MOD_CONTROL, VK_SPACE);
         MOUSE_HOOK = SetWindowsHookExW(WH_MOUSE_LL, mouse_ll_proc, null_mut(), 0);
 
-        let rids = [
-            RAWINPUTDEVICE {
-                usUsagePage: 0x000D,
-                usUsage: 0x0005,
-                dwFlags: RIDEV_INPUTSINK | RIDEV_DEVNOTIFY,
-                hwndTarget: hud_hwnd,
-            },
-            RAWINPUTDEVICE {
-                usUsagePage: 0x0001,
-                usUsage: 0x0002,
-                dwFlags: RIDEV_INPUTSINK | RIDEV_DEVNOTIFY,
-                hwndTarget: hud_hwnd,
-            },
-        ];
+        let rids = [RAWINPUTDEVICE {
+            usUsagePage: 0x000D,
+            usUsage: 0x0005,
+            dwFlags: RIDEV_INPUTSINK | RIDEV_DEVNOTIFY,
+            hwndTarget: hud_hwnd,
+        }];
         let reg_ok = RegisterRawInputDevices(
             rids.as_ptr(),
             rids.len() as UINT,
