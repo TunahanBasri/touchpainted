@@ -1088,12 +1088,45 @@ pub fn save_rules_to_config(path: &str, idle_timeout_ms: u128, rules: &[GestureR
 // ============================================================================
 // 4. APPLICATION STATE & ENGINE
 // ============================================================================
+pub fn build_teaching_pills(rules: &[GestureRule], win_w: i32, win_h: i32) -> Vec<(char, String, RECT)> {
+    let take_n = rules.len().clamp(1, 6);
+    let gap = 8;
+    let avail_w = win_w - 48;
+    let pill_w = ((avail_w - gap * (take_n as i32 - 1)) / take_n as i32).min(96);
+    let total_w = pill_w * (take_n as i32) + gap * (take_n as i32 - 1);
+    let start_x = (win_w - total_w) / 2;
+    let top = win_h - 46;
+    let bottom = win_h - 12;
+
+    rules
+        .iter()
+        .take(take_n)
+        .enumerate()
+        .map(|(i, r)| {
+            let left = start_x + (i as i32) * (pill_w + gap);
+            let short: String = r.name.chars().take(6).collect();
+            let label = format!("{}: {}", r.letter, short);
+            (
+                r.letter,
+                label,
+                RECT {
+                    left,
+                    top,
+                    right: left + pill_w,
+                    bottom,
+                },
+            )
+        })
+        .collect()
+}
+
 pub struct AppState {
     pub hud_hwnd: HWND,
     pub is_hud_visible: bool,
     pub is_paused: bool,
     pub is_teaching_mode: bool,
     pub teaching_letter: char,
+    pub teaching_entered_at: Option<Instant>,
     pub pos_x: i32,
     pub pos_y: i32,
     pub win_w: i32,
@@ -1146,6 +1179,7 @@ impl AppState {
             is_paused: false,
             is_teaching_mode: false,
             teaching_letter: 'C',
+            teaching_entered_at: None,
             pos_x,
             pos_y,
             win_w,
@@ -1245,22 +1279,54 @@ impl AppState {
         self.is_teaching_mode = !self.is_teaching_mode;
         self.virtual_points.clear();
         self.prev_contact_count = 0;
+        self.active_finger_count = 0;
         self.last_centroid = None;
         self.last_activity_time = Instant::now();
 
         if self.is_teaching_mode {
+            self.teaching_entered_at = Some(Instant::now());
             unsafe {
+                UnregisterHotKey(self.hud_hwnd, 3);
                 SetForegroundWindow(self.hud_hwnd);
             }
             log_line(&format!("🎯 [ÖĞRETME MODU AÇILDI] Hedef Harf: '{}'", self.teaching_letter));
             self.status_text = format!(
-                "🎯 ÖĞRETME MODU: Klavyeden harf seçin (Şu an: '{}') ve touchpad'de şekli çizin!",
+                "🎯 ÖĞRETME: Alttan harf tıklayın veya A-Z basın (Seçili: '{}'), sonra çizin!",
                 self.teaching_letter
             );
         } else {
+            self.teaching_entered_at = None;
+            if self.is_hud_visible {
+                unsafe {
+                    RegisterHotKey(self.hud_hwnd, 3, 0, VK_T);
+                }
+            }
             log_line("🎯 [ÖĞRETME MODU KAPATILDI]");
             self.status_text = "✍️ Touchpad'de 1 veya 2 parmakla 'C', 'V', 'M' çizin...".to_string();
         }
+        unsafe {
+            InvalidateRect(self.hud_hwnd, null(), 0);
+        }
+    }
+
+    pub fn select_teaching_letter(&mut self, ch: char) {
+        self.teaching_letter = ch;
+        self.virtual_points.clear();
+        self.prev_contact_count = 0;
+        self.active_finger_count = 0;
+        self.last_centroid = None;
+        self.last_activity_time = Instant::now();
+        let rule_name = self
+            .rules
+            .iter()
+            .find(|r| r.letter == ch)
+            .map(|r| r.name.clone())
+            .unwrap_or_else(|| "Özel Harf".to_string());
+        log_line(&format!("🎯 [HEDEF HARF SEÇİLDİ] '{}' ({})", ch, rule_name));
+        self.status_text = format!(
+            "🎯 '{}' ({}) seçildi! Şimdi touchpad'de '{}' şeklini çizin.",
+            ch, rule_name, ch
+        );
         unsafe {
             InvalidateRect(self.hud_hwnd, null(), 0);
         }
@@ -1450,6 +1516,9 @@ impl AppState {
             log_line("⚠️ [ÇİZİM ÇOK KISA] Değerlendirme iptal edildi, tuval temizlendi.");
             self.status_text = "⚠️ Çok kısa çizgi. Lütfen harfi biraz daha belirgin çizin.".to_string();
             self.virtual_points.clear();
+            self.active_finger_count = 0;
+            self.prev_contact_count = 0;
+            self.last_centroid = None;
             unsafe { InvalidateRect(self.hud_hwnd, null(), 0); }
             return;
         }
@@ -1482,12 +1551,22 @@ impl AppState {
                 target_ch
             ));
             self.is_teaching_mode = false;
+            self.teaching_entered_at = None;
             self.virtual_points.clear();
+            self.active_finger_count = 0;
+            self.prev_contact_count = 0;
+            self.last_centroid = None;
+            self.last_activity_time = Instant::now();
             self.status_text = format!(
                 "✅ '{}' harfi kendi çiziminizle kaydedildi! Şimdi çizerek deneyin.",
                 target_ch
             );
-            unsafe { InvalidateRect(self.hud_hwnd, null(), 0); }
+            unsafe {
+                if self.is_hud_visible {
+                    RegisterHotKey(self.hud_hwnd, 3, 0, VK_T);
+                }
+                InvalidateRect(self.hud_hwnd, null(), 0);
+            }
             return;
         }
 
@@ -1574,6 +1653,9 @@ impl AppState {
             best_score
         );
         self.virtual_points.clear();
+        self.active_finger_count = 0;
+        self.prev_contact_count = 0;
+        self.last_centroid = None;
         unsafe {
             InvalidateRect(self.hud_hwnd, null(), 0);
         }
@@ -1802,39 +1884,85 @@ unsafe extern "system" fn hud_wnd_proc(hwnd: HWND, msg: UINT, wparam: WPARAM, lp
                     SelectObject(mem_dc, old_f);
                     DeleteObject(status_font);
 
-                    // Alt Bar: Aktif Kısayollar, Parmak Sayısı ve Kalan Süre
-                    let foot_font = CreateFontW(
-                        13, 0, 0, 0, 500, 0, 0, 0, 1, 0, 0, 2, 0,
-                        to_wide("Segoe UI").as_ptr(),
-                    );
-                    let old_f = SelectObject(mem_dc, foot_font);
-                    SetTextColor(mem_dc, rgb(120, 135, 160));
-                    let mut foot_rect = RECT { left: 20, top: h - 46, right: w - 20, bottom: h - 14 };
-
-                    let elapsed_ms = app.last_activity_time.elapsed().as_millis();
-                    let rem_sec = app.idle_timeout_ms.saturating_sub(elapsed_ms).div_ceil(1000);
-
-                    let finger_badge = if app.active_finger_count > 0 {
-                        format!("🖐️ {}P | ", app.active_finger_count)
+                    // Alt Bar: Öğretme Modunda Tıklanabilir Harf Kutucukları, Normal Modda Kısayol Özeti
+                    let effective_timeout = if app.is_teaching_mode {
+                        app.idle_timeout_ms.max(12000)
                     } else {
-                        "".to_string()
+                        app.idle_timeout_ms
                     };
-                    let shortcuts: Vec<String> = app
-                        .rules
-                        .iter()
-                        .take(3)
-                        .map(|r| format!("[{}: {}]", r.letter, r.name))
-                        .collect();
-                    let footer_str = format!(
-                        "{}{}  [ESC: Kapat ({}sn)]",
-                        finger_badge,
-                        shortcuts.join("  "),
-                        rem_sec
-                    );
-                    let foot_wide = to_wide(&footer_str);
-                    DrawTextW(mem_dc, foot_wide.as_ptr(), -1, &mut foot_rect, DT_CENTER | DT_SINGLELINE | DT_VCENTER);
-                    SelectObject(mem_dc, old_f);
-                    DeleteObject(foot_font);
+                    let elapsed_ms = app.last_activity_time.elapsed().as_millis();
+                    let rem_sec = effective_timeout.saturating_sub(elapsed_ms).div_ceil(1000);
+
+                    if app.is_teaching_mode {
+                        let pills = build_teaching_pills(&app.rules, w, h);
+                        for &(ch, _, rc) in &pills {
+                            let selected = ch == app.teaching_letter;
+                            let p_brush = if selected {
+                                CreateSolidBrush(rgb(205, 138, 18))
+                            } else {
+                                CreateSolidBrush(rgb(26, 33, 48))
+                            };
+                            let p_pen = if selected {
+                                CreatePen(PS_SOLID, 2, rgb(255, 225, 95))
+                            } else {
+                                CreatePen(PS_SOLID, 1, rgb(64, 80, 110))
+                            };
+                            let old_b = SelectObject(mem_dc, p_brush);
+                            let old_p = SelectObject(mem_dc, p_pen);
+                            RoundRect(mem_dc, rc.left, rc.top, rc.right, rc.bottom, 10, 10);
+                            SelectObject(mem_dc, old_b);
+                            SelectObject(mem_dc, old_p);
+                            DeleteObject(p_brush);
+                            DeleteObject(p_pen);
+                        }
+
+                        let foot_font = CreateFontW(
+                            13, 0, 0, 0, 600, 0, 0, 0, 1, 0, 0, 2, 0,
+                            to_wide("Segoe UI").as_ptr(),
+                        );
+                        let old_f = SelectObject(mem_dc, foot_font);
+                        for (ch, label, mut rc) in pills {
+                            if ch == app.teaching_letter {
+                                SetTextColor(mem_dc, rgb(255, 250, 230));
+                            } else {
+                                SetTextColor(mem_dc, rgb(185, 200, 225));
+                            }
+                            let lw = to_wide(&label);
+                            DrawTextW(mem_dc, lw.as_ptr(), -1, &mut rc, DT_CENTER | DT_SINGLELINE | DT_VCENTER);
+                        }
+                        SelectObject(mem_dc, old_f);
+                        DeleteObject(foot_font);
+                    } else {
+                        let foot_font = CreateFontW(
+                            13, 0, 0, 0, 500, 0, 0, 0, 1, 0, 0, 2, 0,
+                            to_wide("Segoe UI").as_ptr(),
+                        );
+                        let old_f = SelectObject(mem_dc, foot_font);
+                        SetTextColor(mem_dc, rgb(120, 135, 160));
+                        let mut foot_rect = RECT { left: 20, top: h - 46, right: w - 20, bottom: h - 14 };
+
+                        let finger_badge = if app.active_finger_count > 0 {
+                            format!("🖐️ {}P | ", app.active_finger_count)
+                        } else {
+                            "".to_string()
+                        };
+                        let shortcuts: Vec<String> = app
+                            .rules
+                            .iter()
+                            .take(3)
+                            .map(|r| format!("[{}: {}]", r.letter, r.name))
+                            .collect();
+                        let footer_str = format!(
+                            "{}{}  [ESC: Kapat ({}sn)]",
+                            finger_badge,
+                            shortcuts.join("  "),
+                            rem_sec
+                        );
+                        let foot_wide = to_wide(&footer_str);
+                        DrawTextW(mem_dc, foot_wide.as_ptr(), -1, &mut foot_rect, DT_CENTER | DT_SINGLELINE | DT_VCENTER);
+                        SelectObject(mem_dc, old_f);
+                        DeleteObject(foot_font);
+                    }
                 }
 
                 BitBlt(hdc, 0, 0, w, h, mem_dc, 0, 0, 0x00CC0020);
@@ -1859,6 +1987,15 @@ unsafe extern "system" fn hud_wnd_proc(hwnd: HWND, msg: UINT, wparam: WPARAM, lp
                     if x >= 328 && x <= 480 && y >= 8 && y <= 45 {
                         app.toggle_teaching_mode();
                         return 0;
+                    }
+                    if app.is_teaching_mode && y >= app.win_h - 50 && y <= app.win_h - 8 {
+                        let pills = build_teaching_pills(&app.rules, app.win_w, app.win_h);
+                        for (ch, _, rc) in pills {
+                            if x >= rc.left && x <= rc.right && y >= rc.top && y <= rc.bottom {
+                                app.select_teaching_letter(ch);
+                                return 0;
+                            }
+                        }
                     }
                     if y >= 68 && y <= 390 {
                         app.mouse_left_down = true;
@@ -1975,16 +2112,50 @@ unsafe extern "system" fn hud_wnd_proc(hwnd: HWND, msg: UINT, wparam: WPARAM, lp
                         app.hide_hud("Harf Tanındı & Uygulama Başlatıldı");
                     }
                 } else if wparam == 1005 {
-                    // 100ms Watchdog: ESC kontrolü ve 10sn otomatik kapanma sayacı
+                    // 100ms Watchdog: ESC, parmak kalkış temizliği, odak bağımsız harf seçimi ve kapanma sayacı
                     if let Some(ref mut app) = GLOBAL_APP {
                         if app.is_hud_visible {
                             if (GetAsyncKeyState(VK_ESCAPE as i32) as u16 & 0x8000) != 0 {
                                 app.hide_hud("ESC Tuşu (AsyncKey)");
                                 return 0;
                             }
+                            if app.active_finger_count > 0 {
+                                let ptp_stale = app
+                                    .last_ptp_packet_time
+                                    .map(|t| t.elapsed().as_millis() > 220)
+                                    .unwrap_or(true);
+                                if ptp_stale {
+                                    app.active_finger_count = 0;
+                                    app.prev_contact_count = 0;
+                                    app.last_centroid = None;
+                                }
+                            }
+                            if app.is_teaching_mode {
+                                let ignore_t = app
+                                    .teaching_entered_at
+                                    .map(|t| t.elapsed().as_millis() < 450)
+                                    .unwrap_or(false);
+                                for vk in 0x41i32..=0x5Ai32 {
+                                    if ignore_t && vk == VK_T as i32 {
+                                        continue;
+                                    }
+                                    if (GetAsyncKeyState(vk) as u16 & 0x8000) != 0 {
+                                        let ch = (vk as u8) as char;
+                                        if app.teaching_letter != ch {
+                                            app.select_teaching_letter(ch);
+                                        }
+                                        break;
+                                    }
+                                }
+                            }
+                            let effective_timeout = if app.is_teaching_mode {
+                                app.idle_timeout_ms.max(12000)
+                            } else {
+                                app.idle_timeout_ms
+                            };
                             let elapsed = app.last_activity_time.elapsed().as_millis();
-                            if elapsed >= app.idle_timeout_ms {
-                                app.hide_hud(&format!("{}sn Hareketsizlik Süresi Doldu", app.idle_timeout_ms / 1000));
+                            if elapsed >= effective_timeout {
+                                app.hide_hud(&format!("{}sn Hareketsizlik Süresi Doldu", effective_timeout / 1000));
                                 return 0;
                             }
                             InvalidateRect(hwnd, null(), 0);
@@ -2004,13 +2175,7 @@ unsafe extern "system" fn hud_wnd_proc(hwnd: HWND, msg: UINT, wparam: WPARAM, lp
                         app.toggle_teaching_mode();
                     } else if app.is_teaching_mode && (0x41..=0x5A).contains(&vk) {
                         let ch = (vk as u8) as char;
-                        app.teaching_letter = ch;
-                        log_line(&format!("🎯 [HEDEF HARF SEÇİLDİ] '{}'", ch));
-                        app.status_text = format!(
-                            "🎯 ÖĞRETME MODU: '{}' harfi seçildi! Şimdi touchpad'de '{}' şeklini çizin.",
-                            ch, ch
-                        );
-                        InvalidateRect(hwnd, null(), 0);
+                        app.select_teaching_letter(ch);
                     } else if vk == 0x20 || vk == 0x0D {
                         app.evaluate_drawing();
                     }
@@ -2129,12 +2294,12 @@ unsafe extern "system" fn mouse_ll_proc(n_code: i32, w_param: WPARAM, l_param: L
             let (is_open, is_paused, ptp_active, hud_hwnd) = if let Some(ref app) = GLOBAL_APP {
                 let recent_ptp = app
                     .last_ptp_packet_time
-                    .map(|t| t.elapsed().as_millis() < 160)
+                    .map(|t| t.elapsed().as_millis() < 150)
                     .unwrap_or(false);
                 (
                     app.is_hud_visible,
                     app.is_paused,
-                    app.active_finger_count > 0 || recent_ptp,
+                    recent_ptp,
                     app.hud_hwnd,
                 )
             } else {
